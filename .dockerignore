@@ -1,0 +1,33 @@
+
+# Git files
+.git/
+.gitignore
+
+# .NET build files
+**/bin/
+**/obj/
+**/TestResults/
+
+# Test project is not required in API runtime image
+tests/
+
+# IDE files
+.vs/
+.vscode/
+
+# Windows/macOS files
+.DS_Store
+Thumbs.db
+
+# Local configuration and secrets
+.env
+.env.*
+**/appsettings.Development.json
+**/secrets.json
+**/*.user
+**/*.suo
+
+# Terraform local state and cache
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
