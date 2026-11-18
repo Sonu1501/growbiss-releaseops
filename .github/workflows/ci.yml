@@ -26,10 +26,10 @@ concurrency:
 jobs:
 
   # =========================================
-  # JOB 1: BUILD
+  # JOB 1: BUILD AND TEST
   # =========================================
-  build:
-    name: Build .NET API
+  build-and-test:
+    name: Build and Test .NET API
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -55,17 +55,6 @@ jobs:
           --configuration Release
           --no-restore
 
-  # =========================================
-  # JOB 2: TEST
-  # =========================================
-  test:
-    name: Test .NET APIs
-    runs-on: ubuntu-24.04
-    needs: build
-    timeout-minutes: 20
-
-    steps:
-
       - name: Run automated unit tests
         run: >
           dotnet test ./GrowBiss.ReleaseOps.sln
@@ -73,13 +62,14 @@ jobs:
           --no-build
           --verbosity normal
 
+
   # =========================================
   # JOB 2: DOCKER BUILD AND SECURITY SCAN
   # =========================================
   container-build-and-scan:
     name: Docker Build and Security Scan
     runs-on: ubuntu-24.04
-    needs: test
+    needs: build-and-test
     timeout-minutes: 30
 
     steps:
