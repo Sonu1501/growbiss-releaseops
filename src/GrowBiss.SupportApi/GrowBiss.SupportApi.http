@@ -1,0 +1,6 @@
+@GrowBiss.SupportApi_HostAddress = http://localhost:5007
+
+GET {{GrowBiss.SupportApi_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
