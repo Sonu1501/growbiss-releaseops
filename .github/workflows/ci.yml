@@ -1,0 +1,99 @@
+
+name: GrowBiss ReleaseOps CI
+
+# Run automatically on pushes and pull requests targeting main.
+on:
+  push:
+    branches:
+      - main
+
+  pull_request:
+    branches:
+      - main
+
+  # Allow manual execution from GitHub Actions.
+  workflow_dispatch:
+
+# Minimum permissions required for this CI workflow.
+permissions:
+  contents: read
+
+# Cancel older runs if newer code is pushed to the same branch.
+concurrency:
+  group: releaseops-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  # =========================================
+  # JOB 1: BUILD AND TEST
+  # =========================================
+  build-and-test:
+    name: Build and Test .NET API
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Display .NET version
+        run: dotnet --version
+
+      - name: Restore NuGet dependencies
+        run: dotnet restore ./GrowBiss.ReleaseOps.sln
+
+      - name: Build solution
+        run: >
+          dotnet build ./GrowBiss.ReleaseOps.sln
+          --configuration Release
+          --no-restore
+
+      - name: Run automated unit tests
+        run: >
+          dotnet test ./GrowBiss.ReleaseOps.sln
+          --configuration Release
+          --no-build
+          --verbosity normal
+
+
+  # =========================================
+  # JOB 2: DOCKER BUILD AND SECURITY SCAN
+  # =========================================
+  container-build-and-scan:
+    name: Docker Build and Security Scan
+    runs-on: ubuntu-24.04
+    needs: build-and-test
+    timeout-minutes: 30
+
+    steps:
+
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Build Docker image
+        run: >
+          docker build
+          --pull
+          --file src/GrowBiss.SupportApi/Dockerfile
+          --tag growbiss/support-api:${{ github.sha }}
+          .
+
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@0.36.0
+        with:
+          image-ref: growbiss/support-api:${{ github.sha }}
+          format: table
+          vuln-type: os,library
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+          # Initial security baseline:
+          # Report findings without blocking the first CI runs.
+          exit-code: '0'
