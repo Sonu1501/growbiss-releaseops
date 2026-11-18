@@ -29,7 +29,7 @@ jobs:
   # JOB 1: BUILD
   # =========================================
   build:
-    name: Build and Test .NET API
+    name: Build .NET API
     runs-on: ubuntu-24.04
     timeout-minutes: 20
 
@@ -59,26 +59,12 @@ jobs:
   # JOB 2: TEST
   # =========================================
   test:
-    name: Build and Test .NET API
+    name: Test .NET APIs
     runs-on: ubuntu-24.04
     needs: build
     timeout-minutes: 20
 
     steps:
-
-      - name: Checkout source code
-        uses: actions/checkout@v7
-
-      - name: Setup .NET 10 SDK
-        uses: actions/setup-dotnet@v6
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Display .NET version
-        run: dotnet --version
-
-      - name: Restore NuGet dependencies
-        run: dotnet restore ./GrowBiss.ReleaseOps.sln
 
       - name: Run automated unit tests
         run: >
