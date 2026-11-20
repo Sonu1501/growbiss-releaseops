@@ -38,10 +38,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - name: Display .NET version
-        run: dotnet --version
-
-      - name: Restore NuGet dependencies
+      - name: Restore dependencies
         run: dotnet restore ./GrowBiss.ReleaseOps.sln
 
       - name: Build solution
@@ -50,47 +47,41 @@ jobs:
           --configuration Release
           --no-restore
 
-      - name: Run automated unit tests
+      - name: Run automated tests
         run: >
           dotnet test ./GrowBiss.ReleaseOps.sln
           --configuration Release
           --no-build
           --verbosity normal
 
-
   # =========================================
-  # JOB 2: DOCKER BUILD, SECURITY AND ECR
+  # JOB 2: DOCKER BUILD, TRIVY AND GHCR
   # =========================================
   container-build-and-scan:
-    name: Docker Build, Security Scan and ECR Push
+    name: Docker Build, Security Scan and GHCR
     runs-on: ubuntu-24.04
     needs: build-and-test
     timeout-minutes: 30
 
-    # OIDC permission is needed to assume the AWS IAM role.
     permissions:
       contents: read
-      id-token: write
+      packages: write
 
     steps:
 
       - name: Checkout source code
         uses: actions/checkout@v7
 
-      # -------------------------------------
-      # Docker image build
-      # -------------------------------------
+      # Build Docker image
       - name: Build Docker image
-        run: >
-          docker build
-          --pull
-          --file src/GrowBiss.SupportApi/Dockerfile
-          --tag growbiss/support-api:${{ github.sha }}
-          .
+        run: |
+          docker build --pull \
+            --file src/GrowBiss.SupportApi/Dockerfile \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --tag growbiss/support-api:${GITHUB_SHA} \
+            .
 
-      # -------------------------------------
-      # Security scanning
-      # -------------------------------------
+      # Security scan
       - name: Scan Docker image with Trivy
         uses: aquasecurity/trivy-action@v0.36.0
         with:
@@ -101,57 +92,32 @@ jobs:
           ignore-unfixed: true
           exit-code: '0'
 
-      # -------------------------------------
-      # AWS Authentication
-      # Publish only from main branch pushes
-      # -------------------------------------
-      - name: Configure AWS credentials using OIDC
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        uses: aws-actions/configure-aws-credentials@v6.3.0
-        with:
-          role-to-assume: arn:aws:iam::783764581182:role/GrowBissReleaseOpsECRPushRole
-          aws-region: us-east-2
-          allowed-account-ids: '783764581182'
-          role-session-name: GrowBissReleaseOps-${{ github.run_id }}
-
-      # -------------------------------------
-      # Verify AWS identity
-      # -------------------------------------
-      - name: Verify AWS identity
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        run: aws sts get-caller-identity
-
-      # -------------------------------------
-      # ECR Authentication
-      # -------------------------------------
-      - name: Login to Amazon ECR
-        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2.2.0
-
-      # -------------------------------------
-      # Prepare image tag and push to ECR
-      # -------------------------------------
-      - name: Push Docker image to Amazon ECR
+      # Login to GitHub Container Registry
+      - name: Login to GHCR
         if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: growbiss/support-api
-          IMAGE_TAG: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USERNAME: ${{ github.actor }}
         run: |
-          echo "Tagging the scanned Docker image..."
+          echo "$GHCR_TOKEN" | docker login ghcr.io \
+            --username "$GHCR_USERNAME" \
+            --password-stdin
+
+      # Publish image
+      - name: Push Docker image to GHCR
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          OWNER="$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+
+          IMAGE="ghcr.io/${OWNER}/growbiss-support-api"
+
+          TAG="${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
 
           docker tag \
-            growbiss/support-api:${GITHUB_SHA} \
-            ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+            "growbiss/support-api:${GITHUB_SHA}" \
+            "${IMAGE}:${TAG}"
 
-          echo "Pushing Docker image to Amazon ECR..."
+          docker push "${IMAGE}:${TAG}"
 
-          docker push \
-            ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
-
-          echo "Successfully published GrowBiss Support API."
-
-          echo "Image URI:"
-          echo "${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}" >> "$GITHUB_STEP_SUMMARY"
+          echo "## GrowBiss Docker Image Published" >> "$GITHUB_STEP_SUMMARY"
+          echo "Image: \`${IMAGE}:${TAG}\`" >> "$GITHUB_STEP_SUMMARY"
